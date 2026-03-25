@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: finance-config
+data:
+  aws-endpoint: "http://localstack:4566"
+  aws-region: "us-east-1"
+  keycloak-authority: "http://keycloak:8080/realms/finance"
+  keycloak-audience: "finance-app"

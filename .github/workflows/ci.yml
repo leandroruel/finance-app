@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: financedb_test
+          POSTGRES_USER: finance
+          POSTGRES_PASSWORD: finance
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Check formatting
+        run: dotnet format --verify-no-changes --verbosity diagnostic
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Run Unit Tests
+        run: |
+          dotnet test tests/FinanceApp.Domain.Tests \
+            --no-build --configuration Release \
+            --logger "trx;LogFileName=domain-tests.trx" \
+            --collect:"XPlat Code Coverage"
+          dotnet test tests/FinanceApp.Application.Tests \
+            --no-build --configuration Release \
+            --logger "trx;LogFileName=application-tests.trx" \
+            --collect:"XPlat Code Coverage"
+
+      - name: Run Integration Tests
+        env:
+          ConnectionStrings__DefaultConnection: "Host=localhost;Port=5432;Database=financedb_test;Username=finance;Password=finance"
+        run: |
+          dotnet test tests/FinanceApp.Infrastructure.Tests \
+            --no-build --configuration Release \
+            --logger "trx;LogFileName=infrastructure-tests.trx" \
+            --collect:"XPlat Code Coverage"
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: "**/*.trx"
+
+      - name: Upload Coverage Reports
+        uses: codecov/codecov-action@v4
+        with:
+          files: "**/coverage.cobertura.xml"
+          fail_ci_if_error: false
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t finance-app/api:${{ github.sha }} -f src/FinanceApp.API/Dockerfile .
+
+      - name: Tag as latest
+        run: docker tag finance-app/api:${{ github.sha }} finance-app/api:latest

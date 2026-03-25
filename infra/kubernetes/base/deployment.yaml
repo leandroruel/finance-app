@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finance-api
+  labels:
+    app: finance-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: finance-api
+  template:
+    metadata:
+      labels:
+        app: finance-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: finance-api
+          image: finance-app/api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "Production"
+            - name: ASPNETCORE_URLS
+              value: "http://+:8080"
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: finance-secrets
+                  key: db-connection-string
+            - name: AWS__Endpoint
+              valueFrom:
+                configMapKeyRef:
+                  name: finance-config
+                  key: aws-endpoint
+            - name: Keycloak__Authority
+              valueFrom:
+                configMapKeyRef:
+                  name: finance-config
+                  key: keycloak-authority
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
